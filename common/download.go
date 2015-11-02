@@ -15,6 +15,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
+	"path"
+	"path/filepath"
+	"strings"
 )
 
 // DownloadConfig is the configuration given to instantiate a new
@@ -128,6 +132,51 @@ func (d *DownloadClient) Get() (string, error) {
 		// This is a special case where we use a source file that already exists
 		// locally and we don't make a copy. Normally we would copy or download.
 		log.Printf("[DEBUG] Using local file: %s", finalPath)
+
+		// FIXME:
+		//	cwd should point to the path relative to client.json, but
+		//	since this isn't exposed to us anywhere, we use os.Getwd()
+		//	to figure it out.
+		cwd,err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("Unable to get working directory")
+		}
+
+		// convert the actual file uri to a windowsy path
+		// (this logic must correspond to the same logic in common/config.go)
+		if runtime.GOOS == "windows" {
+			const UNCPrefix = string(os.PathSeparator)+string(os.PathSeparator)
+
+			// move any extra path components that were parsed into Host due
+			// to UNC into the url.Path field so that it's PathSeparators get
+			// normalized
+			if len(url.Host) >= len(UNCPrefix) && url.Host[:len(UNCPrefix)] == UNCPrefix {
+				idx := strings.Index(url.Host[len(UNCPrefix):], string(os.PathSeparator))
+				if idx > -1 {
+					url.Path = filepath.ToSlash(url.Host[idx+len(UNCPrefix):]) + url.Path
+					url.Host = url.Host[:idx+len(UNCPrefix)]
+				}
+			}
+
+			// clean up backward-slashes since they only matter when part of a unc path
+			urlPath := filepath.ToSlash(url.Path)
+
+			// semi-absolute path (current drive letter) -- file:///absolute/path
+			if url.Host == "" && len(urlPath) > 0 && urlPath[0] == '/' {
+				finalPath = path.Join(filepath.VolumeName(cwd), urlPath)
+
+			// relative path -- file://./relative/path
+			//					file://relative/path
+			} else if url.Host == "" || (len(url.Host) > 0 && url.Host[0] == '.') {
+				finalPath = path.Join(filepath.ToSlash(cwd), urlPath)
+
+			// absolute path
+			} else {
+				// UNC -- file://\\host/share/whatever
+				// drive -- file://c:/absolute/path
+				finalPath = path.Join(url.Host, urlPath)
+			}
+		}
 
 		// Keep track of the source so we can make sure not to delete this later
 		sourcePath = finalPath
