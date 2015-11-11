@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"runtime"
 	"strings"
 	"time"
 	"unicode"
@@ -47,7 +46,7 @@ func (s *StepTypeBootCommand) Run(state multistep.StateBag) multistep.StepAction
 	vncPort := state.Get("vnc_port").(uint)
 
 	// Connect to VNC
-	ui.Say("Connecting to VM via VNC")
+	ui.Say(fmt.Sprintf("Connecting to VM via VNC (%s:%d)", vncIp, vncPort))
 	nc, err := net.Dial("tcp", fmt.Sprintf("%s:%d", vncIp, vncPort))
 	if err != nil {
 		err := fmt.Errorf("Error connecting to VNC: %s", err)
@@ -69,16 +68,7 @@ func (s *StepTypeBootCommand) Run(state multistep.StateBag) multistep.StepAction
 	log.Printf("Connected to VNC desktop: %s", c.DesktopName)
 
 	// Determine the host IP
-	var ipFinder HostIPFinder
-	if finder, ok := driver.(HostIPFinder); ok {
-		ipFinder = finder
-	} else if runtime.GOOS == "windows" {
-		ipFinder = new(VMnetNatConfIPFinder)
-	} else {
-		ipFinder = &IfconfigIPFinder{Device: "vmnet8"}
-	}
-
-	hostIp, err := ipFinder.HostIP()
+	hostIp, err := driver.HostIP(state)
 	if err != nil {
 		err := fmt.Errorf("Error detecting host IP: %s", err)
 		state.Put("error", err)
