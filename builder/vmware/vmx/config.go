@@ -24,6 +24,7 @@ type Config struct {
 
 	BootCommand    []string `mapstructure:"boot_command"`
 	FloppyFiles    []string `mapstructure:"floppy_files"`
+	FloppyContents []string `mapstructure:"floppy_contents"`
 	RemoteType     string   `mapstructure:"remote_type"`
 	SkipCompaction bool     `mapstructure:"skip_compaction"`
 	SourcePath     string   `mapstructure:"source_path"`

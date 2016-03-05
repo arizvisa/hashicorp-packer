@@ -40,6 +40,7 @@ type Config struct {
 	DiskSize            uint     `mapstructure:"disk_size"`
 	DiskTypeId          string   `mapstructure:"disk_type_id"`
 	FloppyFiles         []string `mapstructure:"floppy_files"`
+	FloppyContents      []string `mapstructure:"floppy_contents"`
 	Format              string   `mapstructure:"format"`
 	GuestOSType         string   `mapstructure:"guest_os_type"`
 	Version             string   `mapstructure:"version"`
@@ -111,6 +112,10 @@ func (b *Builder) Prepare(raws ...interface{}) ([]string, error) {
 
 	if b.config.FloppyFiles == nil {
 		b.config.FloppyFiles = make([]string, 0)
+	}
+
+	if b.config.FloppyContents == nil {
+		b.config.FloppyContents = make([]string, 0)
 	}
 
 	if b.config.GuestOSType == "" {
@@ -228,7 +233,8 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 			Force: b.config.PackerForce,
 		},
 		&common.StepCreateFloppy{
-			Files: b.config.FloppyFiles,
+			Files:    b.config.FloppyFiles,
+			Contents: b.config.FloppyContents,
 		},
 		&stepRemoteUpload{
 			Key:     "floppy_path",
