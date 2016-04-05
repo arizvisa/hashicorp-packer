@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -41,13 +40,7 @@ func TestDownloadableURL(t *testing.T) {
 	// Invalid URL: has hex code in host
 	_, err := DownloadableURL("http://what%20.com")
 	if err == nil {
-		t.Fatal("expected err")
-	}
-
-	// Invalid: unsupported scheme
-	_, err = DownloadableURL("ftp://host.com/path")
-	if err == nil {
-		t.Fatal("expected err")
+		t.Fatalf("expected err : %s", err)
 	}
 
 	// Valid: http
@@ -85,11 +78,7 @@ func TestDownloadableURL_FilePaths(t *testing.T) {
 	}
 
 	tfPath = filepath.Clean(tfPath)
-
 	filePrefix := "file://"
-	if runtime.GOOS == "windows" {
-		filePrefix += "/"
-	}
 
 	// Relative filepath. We run this test in a func so that
 	// the defers run right away.
@@ -111,9 +100,7 @@ func TestDownloadableURL_FilePaths(t *testing.T) {
 			t.Fatalf("err: %s", err)
 		}
 
-		expected := fmt.Sprintf("%s%s",
-			filePrefix,
-			strings.Replace(tfPath, `\`, `/`, -1))
+		expected := "file://" + strings.Replace(tfPath, `\`, `/`, -1)
 		if u != expected {
 			t.Fatalf("unexpected: %#v != %#v", u, expected)
 		}
