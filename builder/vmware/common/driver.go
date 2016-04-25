@@ -40,6 +40,12 @@ type Driver interface {
 	// Stop stops a VM specified by the path to the VMX given.
 	Stop(string) error
 
+	// Unregister unregisters a VM specified by the path to the VMX.
+	Unregister(string) error
+
+	// Destroy removes a VM specified by the path to the VMX.
+	Destroy(string) error
+
 	// SuppressMessages modifies the VMX or surrounding directory so that
 	// VMware doesn't show any annoying messages.
 	SuppressMessages(string) error
