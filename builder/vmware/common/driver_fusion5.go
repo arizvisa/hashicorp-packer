@@ -104,6 +104,22 @@ func (d *Fusion5Driver) Stop(vmxPath string) error {
 	return nil
 }
 
+func (d *Fusion5Driver) Unregister(vmxPath string) error {
+	cmd := exec.Command(d.vmrunPath(), "unregister", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Fusion5Driver) Destroy(vmxPath string) error {
+	cmd := exec.Command(d.vmrunPath(), "deleteVM", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Fusion5Driver) SuppressMessages(vmxPath string) error {
 	dir := filepath.Dir(vmxPath)
 	base := filepath.Base(vmxPath)

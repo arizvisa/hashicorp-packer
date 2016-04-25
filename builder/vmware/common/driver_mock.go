@@ -63,6 +63,14 @@ type DriverMock struct {
 	StopPath   string
 	StopErr    error
 
+	UnregisterCalled bool
+	UnregisterPath   string
+	UnregisterErr    error
+
+	DestroyCalled bool
+	DestroyPath   string
+	DestroyErr    error
+
 	SuppressMessagesCalled bool
 	SuppressMessagesPath   string
 	SuppressMessagesErr    error
@@ -162,6 +170,18 @@ func (d *DriverMock) Stop(path string) error {
 	d.StopCalled = true
 	d.StopPath = path
 	return d.StopErr
+}
+
+func (d *DriverMock) Unregister(path string) error {
+	d.UnregisterCalled = true
+	d.UnregisterPath = path
+	return d.UnregisterErr
+}
+
+func (d *DriverMock) Destroy(path string) error {
+	d.DestroyCalled = true
+	d.DestroyPath = path
+	return d.DestroyErr
 }
 
 func (d *DriverMock) SuppressMessages(path string) error {

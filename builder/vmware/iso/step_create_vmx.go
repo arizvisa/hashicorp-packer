@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"runtime"
 
 	"github.com/mitchellh/multistep"
 	vmwcommon "github.com/mitchellh/packer/builder/vmware/common"
@@ -78,6 +79,13 @@ type serialUnion struct {
 }
 
 func unformat_serial(config string) (*serialUnion,error) {
+	var defaultSerialPort string
+	if runtime.GOOS == "windows" {
+		defaultSerialPort = "COM1"
+	} else {
+		defaultSerialPort = "/dev/ttyS0"
+	}
+
 	comptype := strings.SplitN(config, ":", 2)
 	if len(comptype) < 1 {
 		return nil,fmt.Errorf("Unexpected format for serial port: %s", config)
@@ -114,7 +122,7 @@ func unformat_serial(config string) (*serialUnion,error) {
 
 		case "DEVICE":
 			res := new(serialConfigDevice)
-			res.devicename = map[bool]string{true:strings.ToUpper(comptype[1]), false:"COM1"}[len(comptype[1]) > 0]
+			res.devicename = map[bool]string{true:filepath.FromSlash(comptype[1]), false:defaultSerialPort}[len(comptype[1]) > 0]
 			return &serialUnion{serialType:res, device:res},nil
 
 		default:
@@ -143,7 +151,7 @@ func unformat_parallel(config string) (*parallelUnion,error) {
 	}
 	switch strings.ToUpper(comptype[0]) {
 		case "FILE":
-			res := &parallelPortFile{ filename: comptype[1] }
+			res := &parallelPortFile{ filename: filepath.FromSlash(comptype[1]) }
 			return &parallelUnion{ parallelType:res, file: res},nil
 		case "DEVICE":
 			comp := strings.Split(comptype[1], ",")
@@ -152,7 +160,7 @@ func unformat_parallel(config string) (*parallelUnion,error) {
 			}
 			res := new(parallelPortDevice)
 			res.bidirectional = "FALSE"
-			res.devicename = strings.ToUpper(comp[0])
+			res.devicename = filepath.FromSlash(comp[0])
 			if len(comp) > 1 {
 				switch strings.ToUpper(comp[1]) {
 					case "BI":
