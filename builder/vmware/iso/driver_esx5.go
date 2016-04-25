@@ -109,7 +109,7 @@ func (d *ESX5Driver) Unregister(vmxPathLocal string) error {
 	return d.sh("vim-cmd", "vmsvc/unregister", d.vmId)
 }
 
-func (d *ESX5Driver) Destroy() error {
+func (d *ESX5Driver) Destroy(vmxPathLocal string) error {
 	return d.sh("vim-cmd", "vmsvc/destroy", d.vmId)
 }
 

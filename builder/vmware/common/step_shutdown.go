@@ -121,7 +121,7 @@ LockWaitLoop:
 				break
 			}
 
-			if len(locks) == 1 && strings.HasSuffix(locks[0], ".vmx.lck") {
+			if len(locks) == 1 && strings.HasSuffix(locks[0], ".lck") {
 				log.Println("Only waiting on VMX lock. VMware is clean.")
 				break
 			}

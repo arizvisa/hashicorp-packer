@@ -99,6 +99,22 @@ func (d *Workstation9Driver) Stop(vmxPath string) error {
 	return nil
 }
 
+func (d *Workstation9Driver) Unregister(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "unregister", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Workstation9Driver) Destroy(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "deleteVM", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Workstation9Driver) SuppressMessages(vmxPath string) error {
 	return nil
 }
