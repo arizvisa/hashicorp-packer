@@ -41,6 +41,7 @@ func (s *StepRegister) Cleanup(state multistep.StateBag) {
 
 	driver := state.Get("driver").(vmwcommon.Driver)
 	ui := state.Get("ui").(packer.Ui)
+	vmxPath := state.Get("vmx_path").(string)
 
 	if remoteDriver, ok := driver.(RemoteDriver); ok {
 		if s.Format == "" {
@@ -52,7 +53,7 @@ func (s *StepRegister) Cleanup(state multistep.StateBag) {
 			s.registeredPath = ""
 		} else {
 			ui.Say("Destroying virtual machine...")
-			if err := remoteDriver.Destroy(); err != nil {
+			if err := remoteDriver.Destroy(vmxPath); err != nil {
 				ui.Error(fmt.Sprintf("Error destroying VM: %s", err))
 			}
 			// Wait for the machine to actually destroy

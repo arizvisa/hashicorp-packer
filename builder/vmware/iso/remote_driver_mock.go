@@ -50,7 +50,7 @@ func (d *RemoteDriverMock) Unregister(path string) error {
 	return d.UnregisterErr
 }
 
-func (d *RemoteDriverMock) Destroy() error {
+func (d *RemoteDriverMock) Destroy(string) error {
 	d.DestroyCalled = true
 	return d.DestroyErr
 }
