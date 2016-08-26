@@ -14,6 +14,8 @@ import (
 
 // Player5Driver is a driver that can run VMware Player 5 on Linux.
 type Player5Driver struct {
+	VmwareDriver
+
 	AppPath          string
 	VdiskManagerPath string
 	QemuImgPath      string
@@ -124,6 +126,22 @@ func (d *Player5Driver) Stop(vmxPath string) error {
 	return nil
 }
 
+func (d *Player5Driver) Unregister(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "unregister", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Player5Driver) Destroy(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "deleteVM", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Player5Driver) SuppressMessages(vmxPath string) error {
 	return nil
 }
@@ -181,6 +199,22 @@ func (d *Player5Driver) Verify() error {
 				"One of these is required to configure disks for VMware Player.")
 	}
 
+	// Assigning the path callbacks to VmwareDriver
+	d.VmwareDriver.DhcpLeasesPath = func(device string) string {
+		return playerDhcpLeasesPath(device)
+	}
+
+	d.VmwareDriver.DhcpConfPath = func(device string) string {
+		return playerVmDhcpConfPath(device)
+	}
+
+	d.VmwareDriver.VmnetnatConfPath = func(device string) string {
+		return playerVmnetnatConfPath(device)
+	}
+
+	d.VmwareDriver.NetmapConfPath = func() string {
+		return playerNetmapConfPath()
+	}
 	return nil
 }
 
@@ -190,12 +224,4 @@ func (d *Player5Driver) ToolsIsoPath(flavor string) string {
 
 func (d *Player5Driver) ToolsInstall() error {
 	return nil
-}
-
-func (d *Player5Driver) DhcpLeasesPath(device string) string {
-	return playerDhcpLeasesPath(device)
-}
-
-func (d *Player5Driver) VmnetnatConfPath() string {
-	return playerVmnetnatConfPath()
 }

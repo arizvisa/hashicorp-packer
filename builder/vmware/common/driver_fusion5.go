@@ -14,6 +14,8 @@ import (
 
 // Fusion5Driver is a driver that can run VMware Fusion 5.
 type Fusion5Driver struct {
+	VmwareDriver
+
 	// This is the path to the "VMware Fusion.app"
 	AppPath string
 
@@ -102,6 +104,22 @@ func (d *Fusion5Driver) Stop(vmxPath string) error {
 	return nil
 }
 
+func (d *Fusion5Driver) Unregister(vmxPath string) error {
+	cmd := exec.Command(d.vmrunPath(), "unregister", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Fusion5Driver) Destroy(vmxPath string) error {
+	cmd := exec.Command(d.vmrunPath(), "deleteVM", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Fusion5Driver) SuppressMessages(vmxPath string) error {
 	dir := filepath.Dir(vmxPath)
 	base := filepath.Base(vmxPath)
@@ -139,6 +157,11 @@ func (d *Fusion5Driver) Verify() error {
 		return err
 	}
 
+	// default paths
+	d.VmwareDriver.DhcpLeasesPath = func(device string) string {
+		return "/var/db/vmware/vmnet-dhcpd-" + device + ".leases"
+	}
+
 	return nil
 }
 
@@ -156,10 +179,6 @@ func (d *Fusion5Driver) ToolsIsoPath(k string) string {
 
 func (d *Fusion5Driver) ToolsInstall() error {
 	return nil
-}
-
-func (d *Fusion5Driver) DhcpLeasesPath(device string) string {
-	return "/var/db/vmware/vmnet-dhcpd-" + device + ".leases"
 }
 
 const fusionSuppressPlist = `<?xml version="1.0" encoding="UTF-8"?>

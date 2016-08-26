@@ -18,12 +18,15 @@ import (
 	commonssh "github.com/mitchellh/packer/common/ssh"
 	"github.com/mitchellh/packer/communicator/ssh"
 	"github.com/mitchellh/packer/packer"
+	vmwcommon "github.com/mitchellh/packer/builder/vmware/common"
 	gossh "golang.org/x/crypto/ssh"
 )
 
 // ESX5 driver talks to an ESXi5 hypervisor remotely over SSH to build
 // virtual machines. This driver can only manage one machine at a time.
 type ESX5Driver struct {
+	vmwcommon.VmwareDriver
+
 	Host           string
 	Port           uint
 	Username       string
@@ -106,7 +109,7 @@ func (d *ESX5Driver) Unregister(vmxPathLocal string) error {
 	return d.sh("vim-cmd", "vmsvc/unregister", d.vmId)
 }
 
-func (d *ESX5Driver) Destroy() error {
+func (d *ESX5Driver) Destroy(vmxPathLocal string) error {
 	return d.sh("vim-cmd", "vmsvc/destroy", d.vmId)
 }
 
@@ -145,10 +148,6 @@ func (d *ESX5Driver) ToolsInstall() error {
 	return d.sh("vim-cmd", "vmsvc/tools.install", d.vmId)
 }
 
-func (d *ESX5Driver) DhcpLeasesPath(string) string {
-	return ""
-}
-
 func (d *ESX5Driver) Verify() error {
 	checks := []func() error{
 		d.connect,
@@ -161,11 +160,10 @@ func (d *ESX5Driver) Verify() error {
 			return err
 		}
 	}
-
 	return nil
 }
 
-func (d *ESX5Driver) HostIP() (string, error) {
+func (d *ESX5Driver) HostIP(multistep.StateBag) (string, error) {
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", d.Host, d.Port))
 	defer conn.Close()
 	if err != nil {
