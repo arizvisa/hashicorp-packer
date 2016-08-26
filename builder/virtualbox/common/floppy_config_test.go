@@ -15,4 +15,8 @@ func TestFloppyConfigPrepare(t *testing.T) {
 	if len(c.FloppyFiles) > 0 {
 		t.Fatal("should not have floppy files")
 	}
+
+	if len(c.FloppyContents) > 0 {
+		t.Fatal("should not have floppy contents")
+	}
 }

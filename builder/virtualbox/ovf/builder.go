@@ -56,6 +56,7 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 		new(vboxcommon.StepSuppressMessages),
 		&common.StepCreateFloppy{
 			Files: b.config.FloppyFiles,
+			Contents: b.config.FloppyContents,
 		},
 		&common.StepHTTPServer{
 			HTTPDir:     b.config.HTTPDir,

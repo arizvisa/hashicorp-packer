@@ -61,7 +61,8 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 			Force: b.config.PackerForce,
 		},
 		&common.StepCreateFloppy{
-			Files: b.config.FloppyFiles,
+			Files:    b.config.FloppyFiles,
+			Contents: b.config.FloppyContents,
 		},
 		&StepCloneVMX{
 			OutputDir: b.config.OutputDir,
