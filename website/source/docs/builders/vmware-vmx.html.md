@@ -83,6 +83,12 @@ builder.
     and \[\]) are allowed. Directory names are also allowed, which will add all
     the files found in the directory to the floppy.
 
+-   `floppy_dirs` (array of strings) - A list of directories to place onto
+    the floppy disk recursively. This is similar to the `floppy_files` option
+    except that the directory structure is preserved. This is useful for when
+    your floppy disk includes drivers or if you just want to organize it's 
+    contents as a hierarchy. Wildcard characters (\*, ?, and \[\]) are allowed.
+
 -   `fusion_app_path` (string) - Path to "VMware Fusion.app". By default this is
     "/Applications/VMware Fusion.app" but this setting allows you to
     customize this.
@@ -144,6 +150,12 @@ builder.
 -   `vmx_data_post` (object of key/value strings) - Identical to `vmx_data`,
     except that it is run after the virtual machine is shutdown, and before the
     virtual machine is exported.
+
+-   `vnc_bind_address` (string / IP address) - The IP address that should be binded
+     to for VNC. By default packer will use 127.0.0.1 for this.
+
+-   `vnc_disable_password` (boolean) - Don't auto-generate a VNC password that is
+    used to secure the VNC communication with the VM.
 
 -   `vnc_port_min` and `vnc_port_max` (integer) - The minimum and maximum port
     to use for VNC access to the virtual machine. The builder uses VNC to type

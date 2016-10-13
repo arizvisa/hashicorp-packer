@@ -132,6 +132,7 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 			AvailabilityZone:         b.config.AvailabilityZone,
 			BlockDevices:             b.config.BlockDevices,
 			Tags:                     b.config.RunTags,
+			InstanceInitiatedShutdownBehavior: b.config.InstanceInitiatedShutdownBehavior,
 		},
 		&stepTagEBSVolumes{
 			VolumeRunTags: b.config.VolumeRunTags,
@@ -150,7 +151,10 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 				b.config.RunConfig.Comm.SSHUsername),
 		},
 		&common.StepProvision{},
-		&stepStopInstance{SpotPrice: b.config.SpotPrice},
+		&stepStopInstance{
+			SpotPrice:           b.config.SpotPrice,
+			DisableStopInstance: b.config.DisableStopInstance,
+		},
 		// TODO(mitchellh): verify works with spots
 		&stepModifyInstance{},
 		&awscommon.StepDeregisterAMI{

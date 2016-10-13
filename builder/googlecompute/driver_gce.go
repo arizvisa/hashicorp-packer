@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"runtime"
-	"time"
 
 	"github.com/mitchellh/packer/packer"
 	"github.com/mitchellh/packer/version"
@@ -27,7 +26,7 @@ type driverGCE struct {
 
 var DriverScopes = []string{"https://www.googleapis.com/auth/compute", "https://www.googleapis.com/auth/devstorage.full_control"}
 
-func NewDriverGCE(ui packer.Ui, p string, a *accountFile) (Driver, error) {
+func NewDriverGCE(ui packer.Ui, p string, a *AccountFile) (Driver, error) {
 	var err error
 
 	var client *http.Client
@@ -51,15 +50,20 @@ func NewDriverGCE(ui packer.Ui, p string, a *accountFile) (Driver, error) {
 		// your service account.
 		client = conf.Client(oauth2.NoContext)
 	} else {
-		log.Printf("[INFO] Requesting Google token via GCE Service Role...")
-		client = &http.Client{
-			Transport: &oauth2.Transport{
-				// Fetch from Google Compute Engine's metadata server to retrieve
-				// an access token for the provided account.
-				// If no account is specified, "default" is used.
-				Source: google.ComputeTokenSource(""),
-			},
-		}
+		log.Printf("[INFO] Requesting Google token via GCE API Default Client Token Source...")
+		client, err = google.DefaultClient(oauth2.NoContext, DriverScopes...)
+		// The DefaultClient uses the DefaultTokenSource of the google lib.
+		// The DefaultTokenSource uses the "Application Default Credentials"
+		// It looks for credentials in the following places, preferring the first location found:
+		// 1. A JSON file whose path is specified by the
+		//    GOOGLE_APPLICATION_CREDENTIALS environment variable.
+		// 2. A JSON file in a location known to the gcloud command-line tool.
+		//    On Windows, this is %APPDATA%/gcloud/application_default_credentials.json.
+		//    On other systems, $HOME/.config/gcloud/application_default_credentials.json.
+		// 3. On Google App Engine it uses the appengine.AccessToken function.
+		// 4. On Google Compute Engine and Google App Engine Managed VMs, it fetches
+		//    credentials from the metadata server.
+		//    (In this final case any provided scopes are ignored.)
 	}
 
 	if err != nil {
@@ -91,23 +95,41 @@ func (d *driverGCE) ImageExists(name string) bool {
 	return err == nil
 }
 
-func (d *driverGCE) CreateImage(name, description, zone, disk string) <-chan error {
+func (d *driverGCE) CreateImage(name, description, family, zone, disk string) (<-chan Image, <-chan error) {
 	image := &compute.Image{
 		Description: description,
 		Name:        name,
+		Family:      family,
 		SourceDisk:  fmt.Sprintf("%s%s/zones/%s/disks/%s", d.service.BasePath, d.projectId, zone, disk),
 		SourceType:  "RAW",
 	}
 
+	imageCh := make(chan Image, 1)
 	errCh := make(chan error, 1)
 	op, err := d.service.Images.Insert(d.projectId, image).Do()
 	if err != nil {
 		errCh <- err
 	} else {
-		go waitForState(errCh, "DONE", d.refreshGlobalOp(op))
+		go func() {
+			err = waitForState(errCh, "DONE", d.refreshGlobalOp(op))
+			if err != nil {
+				close(imageCh)
+			}
+			image, err = d.getImage(name, d.projectId)
+			if err != nil {
+				close(imageCh)
+				errCh <- err
+			}
+			imageCh <- Image{
+				Name:      name,
+				ProjectId: d.projectId,
+				SizeGb:    image.DiskSizeGb,
+			}
+			close(imageCh)
+		}()
 	}
 
-	return errCh
+	return imageCh, errCh
 }
 
 func (d *driverGCE) DeleteImage(name string) <-chan error {
@@ -180,6 +202,15 @@ func (d *driverGCE) GetInternalIP(zone, name string) (string, error) {
 	return "", nil
 }
 
+func (d *driverGCE) GetSerialPortOutput(zone, name string) (string, error) {
+	output, err := d.service.Instances.GetSerialPortOutput(d.projectId, zone, name).Do()
+	if err != nil {
+		return "", err
+	}
+	
+	return output.Contents, nil
+}
+
 func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 	// Get the zone
 	d.ui.Message(fmt.Sprintf("Loading zone: %s", c.Zone))
@@ -190,7 +221,7 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 
 	// Get the image
 	d.ui.Message(fmt.Sprintf("Loading image: %s in project %s", c.Image.Name, c.Image.ProjectId))
-	image, err := d.getImage(c.Image)
+	image, err := d.getImage(c.Image.Name, c.Image.ProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -230,21 +261,24 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 		subnetworkSelfLink = subnetwork.SelfLink
 	}
 
-	// If given a regional ip, get it
-	accessconfig := compute.AccessConfig{
-		Name: "AccessConfig created by Packer",
-		Type: "ONE_TO_ONE_NAT",
-	}
-
-	if c.Address != "" {
-		d.ui.Message(fmt.Sprintf("Looking up address: %s", c.Address))
-		region_url := strings.Split(zone.Region, "/")
-		region := region_url[len(region_url)-1]
-		address, err := d.service.Addresses.Get(d.projectId, region, c.Address).Do()
-		if err != nil {
-			return nil, err
+	var accessconfig *compute.AccessConfig
+	// Use external IP if OmitExternalIP isn't set
+	if !c.OmitExternalIP {
+		accessconfig = &compute.AccessConfig{
+			Name: "AccessConfig created by Packer",
+			Type: "ONE_TO_ONE_NAT",
 		}
-		accessconfig.NatIP = address.Address
+
+		// If given a static IP, use it
+		if c.Address != "" {
+			region_url := strings.Split(zone.Region, "/")
+			region := region_url[len(region_url)-1]
+			address, err := d.service.Addresses.Get(d.projectId, region, c.Address).Do()
+			if err != nil {
+				return nil, err
+			}
+			accessconfig.NatIP = address.Address
+		}
 	}
 
 	// Build up the metadata
@@ -281,11 +315,9 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 		Name: c.Name,
 		NetworkInterfaces: []*compute.NetworkInterface{
 			&compute.NetworkInterface{
-				AccessConfigs: []*compute.AccessConfig{
-					&accessconfig,
-				},
-				Network:    network.SelfLink,
-				Subnetwork: subnetworkSelfLink,
+				AccessConfigs: []*compute.AccessConfig{accessconfig},
+				Network:       network.SelfLink,
+				Subnetwork:    subnetworkSelfLink,
 			},
 		},
 		Scheduling: &compute.Scheduling{
@@ -293,7 +325,7 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 		},
 		ServiceAccounts: []*compute.ServiceAccount{
 			&compute.ServiceAccount{
-				Email: "default",
+				Email: c.ServiceAccountEmail,
 				Scopes: []string{
 					"https://www.googleapis.com/auth/userinfo.email",
 					"https://www.googleapis.com/auth/compute",
@@ -323,17 +355,17 @@ func (d *driverGCE) WaitForInstance(state, zone, name string) <-chan error {
 	return errCh
 }
 
-func (d *driverGCE) getImage(img Image) (image *compute.Image, err error) {
-	projects := []string{img.ProjectId, "centos-cloud", "coreos-cloud", "debian-cloud", "google-containers", "opensuse-cloud", "rhel-cloud", "suse-cloud", "ubuntu-os-cloud", "windows-cloud"}
+func (d *driverGCE) getImage(name, projectId string) (image *compute.Image, err error) {
+	projects := []string{projectId, "centos-cloud", "coreos-cloud", "debian-cloud", "google-containers", "opensuse-cloud", "rhel-cloud", "suse-cloud", "ubuntu-os-cloud", "windows-cloud"}
 	for _, project := range projects {
-		image, err = d.service.Images.Get(project, img.Name).Do()
+		image, err = d.service.Images.Get(project, name).Do()
 		if err == nil && image != nil && image.SelfLink != "" {
 			return
 		}
 		image = nil
 	}
 
-	err = fmt.Errorf("Image %s could not be found in any of these projects: %s", img.Name, projects)
+	err = fmt.Errorf("Image %s could not be found in any of these projects: %s", name, projects)
 	return
 }
 
@@ -395,18 +427,16 @@ type stateRefreshFunc func() (string, error)
 
 // waitForState will spin in a loop forever waiting for state to
 // reach a certain target.
-func waitForState(errCh chan<- error, target string, refresh stateRefreshFunc) {
-	for {
+func waitForState(errCh chan<- error, target string, refresh stateRefreshFunc) error {
+	err := Retry(2, 2, 0, func() (bool, error) {
 		state, err := refresh()
 		if err != nil {
-			errCh <- err
-			return
+			return false, err
+		} else if state == target {
+			return true, nil
 		}
-		if state == target {
-			errCh <- nil
-			return
-		}
-
-		time.Sleep(2 * time.Second)
-	}
+		return false, nil
+	})
+	errCh <- err
+	return err
 }

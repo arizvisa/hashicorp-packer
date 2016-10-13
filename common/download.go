@@ -131,10 +131,12 @@ func (d *DownloadClient) Get() (string, error) {
 		return d.config.TargetPath, nil
 	}
 
-	/* parse the configuration url into a net/url object */
-	url, err := url.Parse(d.config.Url)
-	if err != nil { return "", err }
-	log.Printf("Parsed URL: %#v", url)
+	u, err := url.Parse(d.config.Url)
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("Parsed URL: %#v", u)
 
 	/* use the current working directory as the base for relative uri's */
 	cwd,err := os.Getwd()
@@ -142,40 +144,51 @@ func (d *DownloadClient) Get() (string, error) {
 
 	// Determine which is the correct downloader to use
 	var finalPath string
+	sourcePath := ""
+	if u.Scheme == "file" && !d.config.CopyFile {
+		// This is special case for relative path in this case user specify
+		// file:../ and after parse destination goes to Opaque
+		if u.Path != "" {
+			// If url.Path is set just use this
+			finalPath = u.Path
+		} else if u.Opaque != "" {
+			// otherwise try url.Opaque
+			finalPath = u.Opaque
+		}
+		// This is a special case where we use a source file that already exists
+		// locally and we don't make a copy. Normally we would copy or download.
+		log.Printf("[DEBUG] Using local file: %s", finalPath)
 
-	var ok bool
-	d.downloader, ok = d.config.DownloaderMap[url.Scheme]
-	if !ok {
-		return "", fmt.Errorf("No downloader for scheme: %s", url.Scheme)
-	}
-
-	remote,ok := d.downloader.(RemoteDownloader)
-	if !ok {
-		return "", fmt.Errorf("Unable to treat uri scheme %s as a Downloader : %T", url.Scheme, d.downloader)
-	}
-
-	local,ok := d.downloader.(LocalDownloader)
-	if !ok && !d.config.CopyFile{
-		return "", fmt.Errorf("Not allowed to use uri scheme %s in no copy file mode : %T", url.Scheme, d.downloader)
-	}
-
-	// If we're copying the file, then just use the actual downloader
-	if d.config.CopyFile {
-		var f *os.File
+		// Remove forward slash on absolute Windows file URLs before processing
+		if runtime.GOOS == "windows" && len(finalPath) > 0 && finalPath[0] == '/' {
+			finalPath = finalPath[1:len(finalPath)]
+		}
+		// Keep track of the source so we can make sure not to delete this later
+		sourcePath = finalPath
+		if _, err = os.Stat(finalPath); err != nil {
+			return "", err
+		}
+	} else {
 		finalPath = d.config.TargetPath
+
+		var ok bool
+		d.downloader, ok = d.config.DownloaderMap[u.Scheme]
+		if !ok {
+			return "", fmt.Errorf("No downloader for scheme: %s", u.Scheme)
+		}
 
 		f, err = os.OpenFile(finalPath, os.O_RDWR|os.O_CREATE, os.FileMode(0666))
 		if err != nil { return "", err }
 
-		log.Printf("[DEBUG] Downloading: %s", url.String())
-		err = remote.Download(f, url)
+		log.Printf("[DEBUG] Downloading: %s", u.String())
+		err = d.downloader.Download(f, u)
 		f.Close()
 		if err != nil { return "", err }
 
 	// Otherwise if our Downloader is a LocalDownloader we can just use the
 	//	path after transforming it.
 	} else {
-		finalPath,err = local.toPath(cwd, *url)
+		finalPath,err = local.toPath(cwd, *u)
 		if err != nil { return "", err }
 
 		log.Printf("[DEBUG] Using local file: %s", finalPath)

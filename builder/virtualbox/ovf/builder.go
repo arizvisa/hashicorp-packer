@@ -42,6 +42,7 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 	// Set up the state.
 	state := new(multistep.BasicStateBag)
 	state.Put("config", b.config)
+	state.Put("debug", b.config.PackerDebug)
 	state.Put("driver", driver)
 	state.Put("cache", cache)
 	state.Put("hook", hook)
@@ -55,7 +56,8 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 		},
 		new(vboxcommon.StepSuppressMessages),
 		&common.StepCreateFloppy{
-			Files: b.config.FloppyFiles,
+			Files:       b.config.FloppyConfig.FloppyFiles,
+			Directories: b.config.FloppyConfig.FloppyDirectories,
 		},
 		&common.StepHTTPServer{
 			HTTPDir:     b.config.HTTPDir,
@@ -77,8 +79,9 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 			GuestAdditionsMode: b.config.GuestAdditionsMode,
 		},
 		&vboxcommon.StepConfigureVRDP{
-			VRDPPortMin: b.config.VRDPPortMin,
-			VRDPPortMax: b.config.VRDPPortMax,
+			VRDPBindAddress: b.config.VRDPBindAddress,
+			VRDPPortMin:     b.config.VRDPPortMin,
+			VRDPPortMax:     b.config.VRDPPortMax,
 		},
 		new(vboxcommon.StepAttachFloppy),
 		&vboxcommon.StepForwardSSH{
@@ -102,7 +105,7 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 		},
 		&communicator.StepConnect{
 			Config:    &b.config.SSHConfig.Comm,
-			Host:      vboxcommon.CommHost,
+			Host:      vboxcommon.CommHost(b.config.SSHConfig.Comm.SSHHost),
 			SSHConfig: vboxcommon.SSHConfigFunc(b.config.SSHConfig),
 			SSHPort:   vboxcommon.SSHPort,
 		},
@@ -134,9 +137,11 @@ func (b *Builder) Run(ui packer.Ui, hook packer.Hook, cache packer.Cache) (packe
 
 	// Run the steps.
 	if b.config.PackerDebug {
+		pauseFn := common.MultistepDebugFn(ui)
+		state.Put("pauseFn", pauseFn)
 		b.runner = &multistep.DebugRunner{
 			Steps:   steps,
-			PauseFn: common.MultistepDebugFn(ui),
+			PauseFn: pauseFn,
 		}
 	} else {
 		b.runner = &multistep.BasicRunner{Steps: steps}

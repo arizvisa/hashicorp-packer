@@ -83,8 +83,44 @@ builder.
     specified, the default is 10 seconds.
 
 -   `export_opts` (array of strings) - Additional options to pass to the
-    `VBoxManage export`. This can be useful for passing product information to
-    include in the resulting appliance file.
+    [VBoxManage export](https://www.virtualbox.org/manual/ch08.html#vboxmanage-export).
+    This can be useful for passing product information to include in the
+    resulting appliance file. Packer JSON configuration file example:
+
+    ``` {.json}
+    {
+      "type": "virtualbox-ovf",
+      "export_opts":
+      [
+        "--manifest",
+        "--vsys", "0",
+        "--description", "{{user `vm_description`}}",
+        "--version", "{{user `vm_version`}}"
+      ],
+      "format": "ova",
+    }
+    ```
+
+    A VirtualBox [VM description](https://www.virtualbox.org/manual/ch08.html#idm3756)
+    may contain arbitrary strings; the GUI interprets HTML formatting.
+    However, the JSON format does not allow arbitrary newlines within a
+    value. Add a multi-line description by preparing the string in the
+    shell before the packer call like this (shell `>` continuation
+    character snipped for easier copy & paste):
+
+    ``` {.shell}
+
+    vm_description='some
+    multiline
+    description'
+
+    vm_version='0.2.0'
+
+    packer build \
+        -var "vm_description=${vm_description}" \
+        -var "vm_version=${vm_version}"         \
+        "packer_conf.json"
+    ```
 
 -   `floppy_files` (array of strings) - A list of files to place onto a floppy
     disk that is attached when the VM is booted. This is most useful for
@@ -95,6 +131,12 @@ builder.
     creating sub-directories on the floppy. Wildcard characters (\*, ?,
     and \[\]) are allowed. Directory names are also allowed, which will add all
     the files found in the directory to the floppy.
+
+-   `floppy_dirs` (array of strings) - A list of directories to place onto
+    the floppy disk recursively. This is similar to the `floppy_files` option
+    except that the directory structure is preserved. This is useful for when
+    your floppy disk includes drivers or if you just want to organize it's 
+    contents as a hierarchy. Wildcard characters (\*, ?, and \[\]) are allowed.
 
 -   `format` (string) - Either "ovf" or "ova", this specifies the output format
     of the exported virtual machine. This defaults to "ovf".
@@ -206,6 +248,9 @@ builder.
     imported as well as the name of the OVF file when the virtual machine
     is exported. By default this is "packer-BUILDNAME", where "BUILDNAME" is the
     name of the build.
+
+-   `vrdp_bind_address` (string / IP address) - The IP address that should be binded
+     to for VRDP. By default packer will use 127.0.0.1 for this.
 
 -   `vrdp_port_min` and `vrdp_port_max` (integer) - The minimum and maximum port
     to use for VRDP access to the virtual machine. Packer uses a randomly chosen
