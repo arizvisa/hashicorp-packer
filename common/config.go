@@ -2,11 +2,10 @@ package common
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"net/url"
 )
 
 // ScrubConfig is a helper that returns a string representation of
@@ -37,89 +36,46 @@ func ChooseString(vals ...string) string {
 // a completely valid URL. For example, the original URL might be "local/file.iso"
 // which isn't a valid URL. DownloadableURL will return "file:///local/file.iso"
 func DownloadableURL(original string) (string, error) {
-	if runtime.GOOS == "windows" {
-		// If the distance to the first ":" is just one character, assume
-		// we're dealing with a drive letter and thus a file path.
-		idx := strings.Index(original, ":")
-		if idx == 1 {
-			original = "file:///" + original
-		}
-	}
-
-	url, err := url.Parse(original)
-	if err != nil {
-		return "", err
-	}
-
-	if url.Scheme == "" {
-		url.Scheme = "file"
-	}
-
-	if url.Scheme == "file" {
-		// Windows file handling is all sorts of tricky...
-		if runtime.GOOS == "windows" {
-			// If the path is using Windows-style slashes, URL parses
-			// it into the host field.
-			if url.Path == "" && strings.Contains(url.Host, `\`) {
-				url.Path = url.Host
-				url.Host = ""
-			}
-
-			// For Windows absolute file paths, remove leading / prior to processing
-			// since net/url turns "C:/" into "/C:/"
-			if len(url.Path) > 0 && url.Path[0] == '/' {
-				url.Path = url.Path[1:len(url.Path)]
-			}
-		}
-
-		// Only do the filepath transformations if the file appears
-		// to actually exist.
-		if _, err := os.Stat(url.Path); err == nil {
-			url.Path, err = filepath.Abs(url.Path)
-			if err != nil {
-				return "", err
-			}
-
-			url.Path, err = filepath.EvalSymlinks(url.Path)
-			if err != nil {
-				return "", err
-			}
-
-			url.Path = filepath.Clean(url.Path)
-		}
-
-		if runtime.GOOS == "windows" {
-			// Also replace all backslashes with forwardslashes since Windows
-			// users are likely to do this but the URL should actually only
-			// contain forward slashes.
-			url.Path = strings.Replace(url.Path, `\`, `/`, -1)
-		}
-	}
-
-	// Make sure it is lowercased
-	url.Scheme = strings.ToLower(url.Scheme)
-
-	// This is to work around issue #5927. This can safely be removed once
-	// we distribute with a version of Go that fixes that bug.
-	//
-	// See: https://code.google.com/p/go/issues/detail?id=5927
-	if url.Path != "" && url.Path[0] != '/' {
-		url.Path = "/" + url.Path
-	}
 
 	// Verify that the scheme is something we support in our common downloader.
-	supported := []string{"file", "http", "https"}
+	supported := []string{"file", "http", "https", "ftp", "smb"}
 	found := false
 	for _, s := range supported {
-		if url.Scheme == s {
+		if strings.HasPrefix(strings.ToLower(original), s + "://") {
 			found = true
 			break
 		}
 	}
 
-	if !found {
-		return "", fmt.Errorf("Unsupported URL scheme: %s", url.Scheme)
+	// If it's properly prefixed with something we support, then we don't need
+	//	to make it a uri.
+	if found {
+		original = filepath.ToSlash(original)
+
+		// make sure that it can be parsed though..
+		uri,err := url.Parse(original)
+		if err != nil { return "", err }
+
+		uri.Scheme = strings.ToLower(uri.Scheme)
+
+		return uri.String(), nil
 	}
 
-	return url.String(), nil
+	// If the file exists, then make it an absolute path
+	_,err := os.Stat(original)
+	if err == nil {
+		original, err = filepath.Abs(filepath.FromSlash(original))
+		if err != nil { return "", err }
+
+		original, err = filepath.EvalSymlinks(original)
+		if err != nil { return "", err }
+
+		original = filepath.Clean(original)
+		original  = filepath.ToSlash(original)
+	}
+
+	// Since it wasn't properly prefixed, let's make it into a well-formed
+	//	file:// uri.
+
+	return "file://" + original, nil
 }
