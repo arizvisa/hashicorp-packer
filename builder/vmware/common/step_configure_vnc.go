@@ -87,6 +87,7 @@ func (s *StepConfigureVNC) Run(state multistep.StateBag) multistep.StepAction {
 		ui.Error(err.Error())
 		return multistep.ActionHalt
 	}
+	defer f.Close()
 
 	vmxBytes, err := ioutil.ReadAll(f)
 	if err != nil {

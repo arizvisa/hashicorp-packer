@@ -14,6 +14,8 @@ import (
 
 // Workstation9Driver is a driver that can run VMware Workstation 9
 type Workstation9Driver struct {
+	VmwareDriver
+
 	AppPath          string
 	VdiskManagerPath string
 	VmrunPath        string
@@ -97,6 +99,22 @@ func (d *Workstation9Driver) Stop(vmxPath string) error {
 	return nil
 }
 
+func (d *Workstation9Driver) Unregister(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "unregister", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Workstation9Driver) Destroy(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "deleteVM", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Workstation9Driver) SuppressMessages(vmxPath string) error {
 	return nil
 }
@@ -142,6 +160,22 @@ func (d *Workstation9Driver) Verify() error {
 		return err
 	}
 
+	// Assigning the path callbacks to VmwareDriver
+	d.VmwareDriver.DhcpLeasesPath = func(device string) string {
+		return workstationDhcpLeasesPath(device)
+	}
+
+	d.VmwareDriver.DhcpConfPath = func(device string) string {
+		return workstationDhcpConfPath(device)
+	}
+
+	d.VmwareDriver.VmnetnatConfPath = func(device string) string {
+		return workstationVmnetnatConfPath(device)
+	}
+
+	d.VmwareDriver.NetmapConfPath = func() string {
+		return workstationNetmapConfPath()
+	}
 	return nil
 }
 
@@ -151,12 +185,4 @@ func (d *Workstation9Driver) ToolsIsoPath(flavor string) string {
 
 func (d *Workstation9Driver) ToolsInstall() error {
 	return nil
-}
-
-func (d *Workstation9Driver) DhcpLeasesPath(device string) string {
-	return workstationDhcpLeasesPath(device)
-}
-
-func (d *Workstation9Driver) VmnetnatConfPath() string {
-	return workstationVmnetnatConfPath()
 }
