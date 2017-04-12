@@ -195,6 +195,9 @@ func unformat_serial(config string) (*serialUnion, error) {
 
 		return &serialUnion{serialType: res, auto: res}, nil
 
+	case "NONE":
+		return &serialUnion{serialType: nil}, nil
+
 	default:
 		return nil, fmt.Errorf("Unknown serial type : %s : %s", strings.ToUpper(formatType), config)
 	}
@@ -269,7 +272,11 @@ func unformat_parallel(config string) (*parallelUnion, error) {
 			return nil, fmt.Errorf("Unknown parallel port direction : %s : %s", strings.ToUpper(formatOptions), config)
 		}
 		return &parallelUnion{parallelType: res, auto: res}, nil
+
+	case "NONE":
+		return &parallelUnion{parallelType: nil}, nil
 	}
+
 	return nil, fmt.Errorf("Unexpected format for parallel port: %s", config)
 }
 
@@ -430,6 +437,8 @@ func (s *stepCreateVMX) Run(state multistep.StateBag) multistep.StepAction {
 			templateData.Serial_Filename = filepath.FromSlash(serial.auto.devicename)
 			templateData.Serial_Yield = serial.auto.yield
 			templateData.Serial_Auto = "TRUE"
+		case nil:
+			break
 
 		default:
 			err := fmt.Errorf("Error procesing VMX template: %v", serial)
@@ -462,6 +471,9 @@ func (s *stepCreateVMX) Run(state multistep.StateBag) multistep.StepAction {
 			templateData.Parallel_Present = "TRUE"
 			templateData.Parallel_Auto = "TRUE"
 			templateData.Parallel_Bidirectional = parallel.auto.bidirectional
+		case nil:
+			break
+
 		default:
 			err := fmt.Errorf("Error procesing VMX template: %v", parallel)
 			state.Put("error", err)
