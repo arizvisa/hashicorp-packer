@@ -225,3 +225,7 @@ func (d *Player5Driver) ToolsIsoPath(flavor string) string {
 func (d *Player5Driver) ToolsInstall() error {
 	return nil
 }
+
+func (d *Player5Driver) GetVmwareDriver() VmwareDriver {
+	return d.VmwareDriver
+}
