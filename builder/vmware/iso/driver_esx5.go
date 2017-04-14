@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	vmwcommon "github.com/hashicorp/packer/builder/vmware/common"
 	commonssh "github.com/hashicorp/packer/common/ssh"
 	"github.com/hashicorp/packer/communicator/ssh"
 	"github.com/hashicorp/packer/packer"
 	"github.com/mitchellh/multistep"
-	vmwcommon "github.com/mitchellh/packer/builder/vmware/common"
 	gossh "golang.org/x/crypto/ssh"
 )
 
