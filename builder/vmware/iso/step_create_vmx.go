@@ -372,16 +372,8 @@ func (s *stepCreateVMX) Run(state multistep.StateBag) multistep.StepAction {
 	driver := state.Get("driver").(vmwcommon.Driver).GetVmwareDriver()
 
 	// read netmap config
-	pathNetmap := driver.NetmapConfPath()
-	if _, err := os.Stat(pathNetmap); err != nil {
-		err := fmt.Errorf("Could not find netmap conf file: %s", pathNetmap)
-		state.Put("error", err)
-		ui.Error(err.Error())
-		return multistep.ActionHalt
-	}
-	netmap, res := vmwcommon.ReadNetmapConfig(pathNetmap)
-	if res != nil {
-		err := fmt.Errorf("Unable to read netmap conf file: %s: %v", pathNetmap, res)
+	netmap, err := driver.NetworkMapper()
+	if err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
 		return multistep.ActionHalt
