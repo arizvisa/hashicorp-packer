@@ -10,12 +10,21 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"runtime"
+	"strings"
+)
+
+// imports related to each Downloader implementation
+import (
+	"github.com/jlaffaye/ftp"
+	"gopkg.in/cheggaaa/pb.v1"
+	"io"
+	"net/http"
+	"path/filepath"
 )
 
 // DownloadConfig is the configuration given to instantiate a new
@@ -75,23 +84,40 @@ func HashForType(t string) hash.Hash {
 // NewDownloadClient returns a new DownloadClient for the given
 // configuration.
 func NewDownloadClient(c *DownloadConfig) *DownloadClient {
+	const mtu = 1500 /* ethernet */ - 20 /* ipv4 */ - 20 /* tcp */
+
 	if c.DownloaderMap == nil {
 		c.DownloaderMap = map[string]Downloader{
+			"file":  &FileDownloader{bufferSize: nil},
+			"ftp":   &FTPDownloader{userInfo: url.UserPassword("anonymous", "anonymous@"), mtu: mtu},
 			"http":  &HTTPDownloader{userAgent: c.UserAgent},
 			"https": &HTTPDownloader{userAgent: c.UserAgent},
+			"smb":   &SMBDownloader{bufferSize: nil},
 		}
 	}
 
 	return &DownloadClient{config: c}
 }
 
-// A downloader is responsible for actually taking a remote URL and
-// downloading it.
+// A downloader implements the ability to transfer a file, and cancel or resume
+//	it.
 type Downloader interface {
+	Resume()
 	Cancel()
+	Progress() uint64
+	Total() uint64
+}
+
+// A LocalDownloader is responsible for converting a uri to a local path
+//	that the platform can open directly.
+type LocalDownloader interface {
+	toPath(string, url.URL) (string, error)
+}
+
+// A RemoteDownloader is responsible for actually taking a remote URL and
+//	downloading it.
+type RemoteDownloader interface {
 	Download(*os.File, *url.URL) error
-	Progress() uint
-	Total() uint
 }
 
 func (d *DownloadClient) Cancel() {
@@ -105,61 +131,64 @@ func (d *DownloadClient) Get() (string, error) {
 		return d.config.TargetPath, nil
 	}
 
+	/* parse the configuration url into a net/url object */
 	u, err := url.Parse(d.config.Url)
 	if err != nil {
 		return "", err
 	}
-
 	log.Printf("Parsed URL: %#v", u)
 
-	// Files when we don't copy the file are special cased.
-	var f *os.File
-	var finalPath string
-	sourcePath := ""
-	if u.Scheme == "file" && !d.config.CopyFile {
-		// This is special case for relative path in this case user specify
-		// file:../ and after parse destination goes to Opaque
-		if u.Path != "" {
-			// If url.Path is set just use this
-			finalPath = u.Path
-		} else if u.Opaque != "" {
-			// otherwise try url.Opaque
-			finalPath = u.Opaque
-		}
-		// This is a special case where we use a source file that already exists
-		// locally and we don't make a copy. Normally we would copy or download.
-		log.Printf("[DEBUG] Using local file: %s", finalPath)
+	/* use the current working directory as the base for relative uri's */
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
 
-		// Remove forward slash on absolute Windows file URLs before processing
-		if runtime.GOOS == "windows" && len(finalPath) > 0 && finalPath[0] == '/' {
-			finalPath = finalPath[1:]
-		}
-		// Keep track of the source so we can make sure not to delete this later
-		sourcePath = finalPath
-		if _, err = os.Stat(finalPath); err != nil {
-			return "", err
-		}
-	} else {
+	// Determine which is the correct downloader to use
+	var finalPath string
+
+	var ok bool
+	d.downloader, ok = d.config.DownloaderMap[u.Scheme]
+	if !ok {
+		return "", fmt.Errorf("No downloader for scheme: %s", u.Scheme)
+	}
+
+	remote, ok := d.downloader.(RemoteDownloader)
+	if !ok {
+		return "", fmt.Errorf("Unable to treat uri scheme %s as a Downloader : %T", u.Scheme, d.downloader)
+	}
+
+	local, ok := d.downloader.(LocalDownloader)
+	if !ok && !d.config.CopyFile {
+		return "", fmt.Errorf("Not allowed to use uri scheme %s in no copy file mode : %T", u.Scheme, d.downloader)
+	}
+
+	// If we're copying the file, then just use the actual downloader
+	if d.config.CopyFile {
+		var f *os.File
 		finalPath = d.config.TargetPath
 
-		var ok bool
-		d.downloader, ok = d.config.DownloaderMap[u.Scheme]
-		if !ok {
-			return "", fmt.Errorf("No downloader for scheme: %s", u.Scheme)
-		}
-
-		// Otherwise, download using the downloader.
 		f, err = os.OpenFile(finalPath, os.O_RDWR|os.O_CREATE, os.FileMode(0666))
 		if err != nil {
 			return "", err
 		}
 
 		log.Printf("[DEBUG] Downloading: %s", u.String())
-		err = d.downloader.Download(f, u)
+		err = remote.Download(f, u)
 		f.Close()
 		if err != nil {
 			return "", err
 		}
+
+		// Otherwise if our Downloader is a LocalDownloader we can just use the
+		//	path after transforming it.
+	} else {
+		finalPath, err = local.toPath(cwd, *u)
+		if err != nil {
+			return "", err
+		}
+
+		log.Printf("[DEBUG] Using local file: %s", finalPath)
 	}
 
 	if d.config.Hash != nil {
@@ -167,7 +196,7 @@ func (d *DownloadClient) Get() (string, error) {
 		verify, err = d.VerifyChecksum(finalPath)
 		if err == nil && !verify {
 			// Only delete the file if we made a copy or downloaded it
-			if sourcePath != finalPath {
+			if d.config.CopyFile {
 				os.Remove(finalPath)
 			}
 
@@ -185,7 +214,6 @@ func (d *DownloadClient) PercentProgress() int {
 	if d.downloader == nil {
 		return -1
 	}
-
 	return int((float64(d.downloader.Progress()) / float64(d.downloader.Total())) * 100)
 }
 
@@ -211,17 +239,21 @@ func (d *DownloadClient) VerifyChecksum(path string) (bool, error) {
 // HTTPDownloader is an implementation of Downloader that downloads
 // files over HTTP.
 type HTTPDownloader struct {
-	progress  uint
-	total     uint
+	progress  uint64
+	total     uint64
 	userAgent string
 }
 
-func (*HTTPDownloader) Cancel() {
+func (d *HTTPDownloader) Cancel() {
+	// TODO(mitchellh): Implement
+}
+
+func (d *HTTPDownloader) Resume() {
 	// TODO(mitchellh): Implement
 }
 
 func (d *HTTPDownloader) Download(dst *os.File, src *url.URL) error {
-	log.Printf("Starting download: %s", src.String())
+	log.Printf("Starting download over HTTP: %s", src.String())
 
 	// Seek to the beginning by default
 	if _, err := dst.Seek(0, 0); err != nil {
@@ -257,7 +289,8 @@ func (d *HTTPDownloader) Download(dst *os.File, src *url.URL) error {
 			if fi, err := dst.Stat(); err == nil {
 				if _, err = dst.Seek(0, os.SEEK_END); err == nil {
 					req.Header.Set("Range", fmt.Sprintf("bytes=%d-", fi.Size()))
-					d.progress = uint(fi.Size())
+
+					d.progress = uint64(fi.Size())
 				}
 			}
 		}
@@ -271,7 +304,10 @@ func (d *HTTPDownloader) Download(dst *os.File, src *url.URL) error {
 		return err
 	}
 
-	d.total = d.progress + uint(resp.ContentLength)
+	d.total = d.progress + uint64(resp.ContentLength)
+	progressBar := pb.New64(int64(d.Total())).Start()
+	progressBar.Set64(int64(d.Progress()))
+
 	var buffer [4096]byte
 	for {
 		n, err := resp.Body.Read(buffer[:])
@@ -279,7 +315,8 @@ func (d *HTTPDownloader) Download(dst *os.File, src *url.URL) error {
 			return err
 		}
 
-		d.progress += uint(n)
+		d.progress += uint64(n)
+		progressBar.Set64(int64(d.Progress()))
 
 		if _, werr := dst.Write(buffer[:n]); werr != nil {
 			return werr
@@ -293,10 +330,385 @@ func (d *HTTPDownloader) Download(dst *os.File, src *url.URL) error {
 	return nil
 }
 
-func (d *HTTPDownloader) Progress() uint {
+func (d *HTTPDownloader) Progress() uint64 {
 	return d.progress
 }
 
-func (d *HTTPDownloader) Total() uint {
+func (d *HTTPDownloader) Total() uint64 {
 	return d.total
+}
+
+// FTPDownloader is an implementation of Downloader that downloads
+// files over FTP.
+type FTPDownloader struct {
+	userInfo *url.Userinfo
+	mtu      uint
+
+	active   bool
+	progress uint64
+	total    uint64
+}
+
+func (d *FTPDownloader) Progress() uint64 {
+	return d.progress
+}
+
+func (d *FTPDownloader) Total() uint64 {
+	return d.total
+}
+
+func (d *FTPDownloader) Cancel() {
+	d.active = false
+}
+
+func (d *FTPDownloader) Resume() {
+	// TODO: Implement
+}
+
+func (d *FTPDownloader) Download(dst *os.File, src *url.URL) error {
+	var userinfo *url.Userinfo
+
+	userinfo = d.userInfo
+	d.active = false
+
+	// check the uri is correct
+	if src == nil || src.Scheme != "ftp" {
+		return fmt.Errorf("Unexpected uri scheme: %s", src.Scheme)
+	}
+	uri := src
+
+	// connect to ftp server
+	var cli *ftp.ServerConn
+
+	log.Printf("Starting download over FTP: %s : %s\n", uri.Host, uri.Path)
+	cli, err := ftp.Dial(uri.Host)
+	if err != nil {
+		return nil
+	}
+	defer cli.Quit()
+
+	// handle authentication
+	if uri.User != nil {
+		userinfo = uri.User
+	}
+
+	pass, ok := userinfo.Password()
+	if !ok {
+		pass = "ftp@"
+	}
+
+	log.Printf("Authenticating to FTP server: %s : %s\n", userinfo.Username(), pass)
+	err = cli.Login(userinfo.Username(), pass)
+	if err != nil {
+		return err
+	}
+
+	// locate specified path
+	p := path.Dir(uri.Path)
+
+	log.Printf("Changing to FTP directory : %s\n", p)
+	err = cli.ChangeDir(p)
+	if err != nil {
+		return nil
+	}
+
+	curpath, err := cli.CurrentDir()
+	if err != nil {
+		return err
+	}
+	log.Printf("Current FTP directory : %s\n", curpath)
+
+	// collect stats about the specified file
+	var name string
+	var entry *ftp.Entry
+
+	_, name = path.Split(uri.Path)
+	entry = nil
+
+	entries, err := cli.List(curpath)
+	for _, e := range entries {
+		if e.Type == ftp.EntryTypeFile && e.Name == name {
+			entry = e
+			break
+		}
+	}
+
+	if entry == nil {
+		return fmt.Errorf("Unable to find file: %s", uri.Path)
+	}
+	log.Printf("Found file : %s : %v bytes\n", entry.Name, entry.Size)
+
+	d.progress = 0
+	d.total = entry.Size
+	progressBar := pb.New64(int64(d.Total())).Start()
+
+	// download specified file
+	d.active = true
+	reader, err := cli.RetrFrom(uri.Path, d.progress)
+	if err != nil {
+		return nil
+	}
+
+	// do it in a goro so that if someone wants to cancel it, they can
+	errch := make(chan error)
+	go func(d *FTPDownloader, r io.Reader, w io.Writer, e chan error) {
+		for d.active {
+			n, err := io.CopyN(w, r, int64(d.mtu))
+			if err != nil {
+				break
+			}
+
+			d.progress += uint64(n)
+			progressBar.Set64(int64(d.Progress()))
+		}
+		d.active = false
+		e <- err
+	}(d, reader, dst, errch)
+
+	// spin until it's done
+	err = <-errch
+	reader.Close()
+
+	if err == nil && d.progress != d.total {
+		err = fmt.Errorf("FTP total transfer size was %d when %d was expected", d.progress, d.total)
+	}
+
+	// log out
+	cli.Logout()
+	return err
+}
+
+// FileDownloader is an implementation of Downloader that downloads
+// files using the regular filesystem.
+type FileDownloader struct {
+	bufferSize *uint
+
+	active   bool
+	progress uint64
+	total    uint64
+}
+
+func (d *FileDownloader) Progress() uint64 {
+	return d.progress
+}
+
+func (d *FileDownloader) Total() uint64 {
+	return d.total
+}
+
+func (d *FileDownloader) Cancel() {
+	d.active = false
+}
+
+func (d *FileDownloader) Resume() {
+	// TODO: Implement
+}
+
+func (d *FileDownloader) toPath(base string, uri url.URL) (string, error) {
+	var result string
+
+	// absolute path -- file://c:/absolute/path -> c:/absolute/path
+	if strings.HasSuffix(uri.Host, ":") {
+		result = path.Join(uri.Host, uri.Path)
+
+		// semi-absolute path (current drive letter)
+		//	-- file:///absolute/path -> /absolute/path
+	} else if uri.Host == "" && strings.HasPrefix(uri.Path, "/") {
+		result = path.Join(filepath.VolumeName(base), uri.Path)
+
+		// relative path -- file://./relative/path -> ./relative/path
+	} else if uri.Host == "." {
+		result = path.Join(base, uri.Path)
+
+		// relative path -- file://relative/path -> ./relative/path
+	} else {
+		result = path.Join(base, uri.Host, uri.Path)
+	}
+	return filepath.ToSlash(result), nil
+}
+
+func (d *FileDownloader) Download(dst *os.File, src *url.URL) error {
+	d.active = false
+
+	/* check the uri's scheme to make sure it matches */
+	if src == nil || src.Scheme != "file" {
+		return fmt.Errorf("Unexpected uri scheme: %s", src.Scheme)
+	}
+	uri := src
+
+	/* use the current working directory as the base for relative uri's */
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	/* determine which uri format is being used and convert to a real path */
+	realpath, err := d.toPath(cwd, *uri)
+	if err != nil {
+		return err
+	}
+
+	/* download the file using the operating system's facilities */
+	d.progress = 0
+	d.active = true
+
+	f, err := os.Open(realpath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// get the file size
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	d.total = uint64(fi.Size())
+	progressBar := pb.New64(int64(d.Total())).Start()
+
+	// no bufferSize specified, so copy synchronously.
+	if d.bufferSize == nil {
+		var n int64
+		n, err = io.Copy(dst, f)
+		d.active = false
+
+		d.progress += uint64(n)
+		progressBar.Set64(int64(d.Progress()))
+
+		// use a goro in case someone else wants to enable cancel/resume
+	} else {
+		errch := make(chan error)
+		go func(d *FileDownloader, r io.Reader, w io.Writer, e chan error) {
+			for d.active {
+				n, err := io.CopyN(w, r, int64(*d.bufferSize))
+				if err != nil {
+					break
+				}
+
+				d.progress += uint64(n)
+				progressBar.Set64(int64(d.Progress()))
+			}
+			d.active = false
+			e <- err
+		}(d, f, dst, errch)
+
+		// ...and we spin until it's done
+		err = <-errch
+	}
+	f.Close()
+	return err
+}
+
+// SMBDownloader is an implementation of Downloader that downloads
+// files using the "\\" path format on Windows
+type SMBDownloader struct {
+	bufferSize *uint
+
+	active   bool
+	progress uint64
+	total    uint64
+}
+
+func (d *SMBDownloader) Progress() uint64 {
+	return d.progress
+}
+
+func (d *SMBDownloader) Total() uint64 {
+	return d.total
+}
+
+func (d *SMBDownloader) Cancel() {
+	d.active = false
+}
+
+func (d *SMBDownloader) Resume() {
+	// TODO: Implement
+}
+
+func (d *SMBDownloader) toPath(base string, uri url.URL) (string, error) {
+	const UNCPrefix = string(os.PathSeparator) + string(os.PathSeparator)
+
+	if runtime.GOOS != "windows" {
+		return "", fmt.Errorf("Support for SMB based uri's are not supported on %s", runtime.GOOS)
+	}
+
+	return UNCPrefix + filepath.ToSlash(path.Join(uri.Host, uri.Path)), nil
+}
+
+func (d *SMBDownloader) Download(dst *os.File, src *url.URL) error {
+
+	/* first we warn the world if we're not running windows */
+	if runtime.GOOS != "windows" {
+		return fmt.Errorf("Support for SMB based uri's are not supported on %s", runtime.GOOS)
+	}
+
+	d.active = false
+
+	/* convert the uri using the net/url module to a UNC path */
+	if src == nil || src.Scheme != "smb" {
+		return fmt.Errorf("Unexpected uri scheme: %s", src.Scheme)
+	}
+	uri := src
+
+	/* use the current working directory as the base for relative uri's */
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	/* convert uri to an smb-path */
+	realpath, err := d.toPath(cwd, *uri)
+	if err != nil {
+		return err
+	}
+
+	/* Open up the "\\"-prefixed path using the Windows filesystem */
+	d.progress = 0
+	d.active = true
+
+	f, err := os.Open(realpath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// get the file size (at the risk of performance)
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	d.total = uint64(fi.Size())
+	progressBar := pb.New64(int64(d.Total())).Start()
+
+	// no bufferSize specified, so copy synchronously.
+	if d.bufferSize == nil {
+		var n int64
+		n, err = io.Copy(dst, f)
+		d.active = false
+
+		d.progress += uint64(n)
+		progressBar.Set64(int64(d.Progress()))
+
+		// use a goro in case someone else wants to enable cancel/resume
+	} else {
+		errch := make(chan error)
+		go func(d *SMBDownloader, r io.Reader, w io.Writer, e chan error) {
+			for d.active {
+				n, err := io.CopyN(w, r, int64(*d.bufferSize))
+				if err != nil {
+					break
+				}
+
+				d.progress += uint64(n)
+				progressBar.Set64(int64(d.Progress()))
+			}
+			d.active = false
+			e <- err
+		}(d, f, dst, errch)
+
+		// ...and as usual we spin until it's done
+		err = <-errch
+	}
+	f.Close()
+	return err
 }
