@@ -14,6 +14,8 @@ import (
 
 // Workstation9Driver is a driver that can run VMware Workstation 9
 type Workstation9Driver struct {
+	VmwareDriver
+
 	AppPath          string
 	VdiskManagerPath string
 	VmrunPath        string
@@ -97,6 +99,22 @@ func (d *Workstation9Driver) Stop(vmxPath string) error {
 	return nil
 }
 
+func (d *Workstation9Driver) Unregister(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "unregister", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Workstation9Driver) Destroy(vmxPath string) error {
+	cmd := exec.Command(d.VmrunPath, "deleteVM", vmxPath)
+	if _, _, err := runAndLog(cmd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Workstation9Driver) SuppressMessages(vmxPath string) error {
 	return nil
 }
@@ -142,6 +160,33 @@ func (d *Workstation9Driver) Verify() error {
 		return err
 	}
 
+	// Assigning the path callbacks to VmwareDriver
+	d.VmwareDriver.DhcpLeasesPath = func(device string) string {
+		return workstationDhcpLeasesPath(device)
+	}
+
+	d.VmwareDriver.DhcpConfPath = func(device string) string {
+		return workstationDhcpConfPath(device)
+	}
+
+	d.VmwareDriver.VmnetnatConfPath = func(device string) string {
+		return workstationVmnetnatConfPath(device)
+	}
+
+	d.VmwareDriver.NetworkMapper = func() (NetworkNameMapper, error) {
+		pathNetmap := workstationNetmapConfPath()
+		if _, err := os.Stat(pathNetmap); err != nil {
+			return nil, fmt.Errorf("Could not find netmap conf file: %s", pathNetmap)
+		}
+
+		fd, err := os.Open(pathNetmap)
+		if err != nil {
+			return nil, err
+		}
+		defer fd.Close()
+
+		return ReadNetworkMap(fd)
+	}
 	return nil
 }
 
@@ -153,10 +198,6 @@ func (d *Workstation9Driver) ToolsInstall() error {
 	return nil
 }
 
-func (d *Workstation9Driver) DhcpLeasesPath(device string) string {
-	return workstationDhcpLeasesPath(device)
-}
-
-func (d *Workstation9Driver) VmnetnatConfPath() string {
-	return workstationVmnetnatConfPath()
+func (d *Workstation9Driver) GetVmwareDriver() VmwareDriver {
+	return d.VmwareDriver
 }
