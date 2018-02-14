@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/hashicorp/packer/common"
 )
 
 type VagrantCloudClient struct {
@@ -101,34 +103,41 @@ func (v VagrantCloudClient) Delete(path string) (*http.Response, error) {
 	return resp, err
 }
 
-func (v VagrantCloudClient) Upload(path string, url string) (*http.Response, error) {
+func (v VagrantCloudClient) Upload(path string, url string, output func(string)) (*http.Response, error) {
+	// Open up the file for upload
 	file, err := os.Open(path)
-
 	if err != nil {
 		return nil, fmt.Errorf("Error opening file for upload: %s", err)
 	}
 
+	// Grab the file size and update the progress bar
 	fi, err := file.Stat()
-
 	if err != nil {
 		return nil, fmt.Errorf("Error stating file for upload: %s", err)
 	}
 
-	defer file.Close()
+	// Grab the default looking ProgressBar
+	pb := common.GetDefaultProgressBar() // from common/step_download.go
+	pb.Total = fi.Size()
 
-	request, err := http.NewRequest("PUT", url, file)
+	// Prepare it and set it's output callback
+	bar := pb.Start()
+	defer bar.Finish()
+	bar.Callback = output
 
+	// Prepare the http request with a ProxyReader for the ProgressBar
+	request, err := http.NewRequest("PUT", url, bar.NewProxyReader(file))
 	if err != nil {
 		return nil, fmt.Errorf("Error preparing upload request: %s", err)
 	}
-
-	log.Printf("Post-Processor Vagrant Cloud API Upload: %s %s", path, url)
-
 	request.ContentLength = fi.Size()
+
+	// Now we can upload the file
+	log.Printf("Post-Processor Vagrant Cloud API Upload: %s %s", path, url)
 	resp, err := v.client.Do(request)
 
+	// Log the response and we're done.
 	log.Printf("Post-Processor Vagrant Cloud Upload Response: \n\n%+v", resp)
-
 	return resp, err
 }
 
