@@ -119,14 +119,17 @@ func (v VagrantCloudClient) Upload(path string, url string, output func(string))
 	// Grab the default looking ProgressBar
 	pb := common.GetDefaultProgressBar() // from common/step_download.go
 	pb.Total = fi.Size()
+	log.Printf("Post-Processor Vagrant Cloud Status: Creating progress-bar and setting total size to %d.\n", pb.Total)
 
 	// Prepare it and set it's output callback
 	bar := pb.Start()
 	defer bar.Finish()
 	bar.Callback = output
+	log.Printf("Post-Processor Vagrant Cloud Status: Started progress-bar with output set to %#v.\n", bar.Callback)
 
 	// Prepare the http request with a ProxyReader for the ProgressBar
-	request, err := http.NewRequest("PUT", url, bar.NewProxyReader(file))
+	proxyFileReader := bar.NewProxyReader(file)
+	request, err := http.NewRequest("PUT", url, proxyFileReader)
 	if err != nil {
 		return nil, fmt.Errorf("Error preparing upload request: %s", err)
 	}
@@ -134,7 +137,9 @@ func (v VagrantCloudClient) Upload(path string, url string, output func(string))
 
 	// Now we can upload the file
 	log.Printf("Post-Processor Vagrant Cloud API Upload: %s %s", path, url)
+	output("Making Post-Processor Vagrant Cloud upload request. Progress bar should look like : %s", bar.String())
 	resp, err := v.client.Do(request)
+	output("Completed Post-Processor Vagrant Cloud upload request.")
 
 	// Log the response and we're done.
 	log.Printf("Post-Processor Vagrant Cloud Upload Response: \n\n%+v", resp)
