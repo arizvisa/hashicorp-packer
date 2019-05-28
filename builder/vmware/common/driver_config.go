@@ -53,6 +53,23 @@ func (c *DriverConfig) Prepare(ctx *interpolate.Context) []error {
 	return nil
 }
 
+// FIXME: This function is implemented by the Driver, but unfortunately the configuration
+//        is validated before the driver is actually created. So to deal with this case
+//        (albeit lazily due to not re-factoring code), we duplicate the GetOVFTool code
+//        from the driver here.
+
+func getOVFTool() string {
+	ovftool := "ovftool"
+	if runtime.GOOS == "windows" {
+		ovftool = "ovftool.exe"
+	}
+
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
+}
+
 func (c *DriverConfig) Validate(SkipExport bool) error {
 	if c.RemoteType == "" || SkipExport == true {
 		return nil
@@ -68,7 +85,7 @@ func (c *DriverConfig) Validate(SkipExport bool) error {
 	// check that password is valid by sending a dummy ovftool command
 	// now, so that we don't fail for a simple mistake after a long
 	// build
-	ovftool := GetOVFTool()
+	ovftool := getOVFTool()
 	ovfToolArgs := []string{"--noSSLVerify", "--verifyOnly", fmt.Sprintf("vi://%s:%s@%s",
 		url.QueryEscape(c.RemoteUser),
 		url.QueryEscape(c.RemotePassword),

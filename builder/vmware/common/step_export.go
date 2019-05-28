@@ -26,18 +26,6 @@ type StepExport struct {
 	OutputDir      string
 }
 
-func GetOVFTool() string {
-	ovftool := "ovftool"
-	if runtime.GOOS == "windows" {
-		ovftool = "ovftool.exe"
-	}
-
-	if _, err := exec.LookPath(ovftool); err != nil {
-		return ""
-	}
-	return ovftool
-}
-
 func (s *StepExport) generateArgs(c *DriverConfig, displayName string, hidePassword bool) []string {
 	password := url.QueryEscape(c.RemotePassword)
 	username := url.QueryEscape(c.RemoteUser)
@@ -57,6 +45,7 @@ func (s *StepExport) generateArgs(c *DriverConfig, displayName string, hidePassw
 }
 
 func (s *StepExport) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
+	driver := state.Get("driver").(Driver)
 	c := state.Get("driverConfig").(*DriverConfig)
 	ui := state.Get("ui").(packer.Ui)
 
@@ -71,7 +60,7 @@ func (s *StepExport) Run(ctx context.Context, state multistep.StateBag) multiste
 		return multistep.ActionContinue
 	}
 
-	ovftool := GetOVFTool()
+	ovftool := driver.GetOVFTool()
 	if ovftool == "" {
 		err := fmt.Errorf("Error %s not found: ", ovftool)
 		state.Put("error", err)

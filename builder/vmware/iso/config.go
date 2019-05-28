@@ -181,6 +181,7 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 			fmt.Errorf("format must be one of ova, ovf, or vmx"))
 	}
 
+	// FIXME: How can we check out that the username and password is correct using Driver.GetOVFTool?
 	err = c.DriverConfig.Validate(c.SkipExport)
 	if err != nil {
 		errs = packer.MultiErrorAppend(errs, err)

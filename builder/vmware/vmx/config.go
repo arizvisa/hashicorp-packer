@@ -93,6 +93,7 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		}
 	}
 
+	// FIXME: How can we check out that the username and password is correct using Driver.GetOVFTool?
 	err = c.DriverConfig.Validate(c.SkipExport)
 	if err != nil {
 		errs = packer.MultiErrorAppend(errs, err)
