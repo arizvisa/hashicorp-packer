@@ -156,6 +156,11 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 			fmt.Errorf("remote_host must be specified for the ESX builders"))
 	}
 
+	if c.Format != "" && c.RemoteType != "esx5" {
+		errs = packer.MultiErrorAppend(errs,
+			fmt.Errorf("format is only valid when RemoteType=esx5"))
+	}
+
 	// Validate the export is one of the valid types
 	if c.Format == "" {
 		c.Format = "ovf"

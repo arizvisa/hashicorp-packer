@@ -171,9 +171,9 @@ func TestBuilderPrepare_RemoteType(t *testing.T) {
 	}
 
 	// Good
-	config["remote_type"] = ""
-	config["remote_host"] = ""
-	config["remote_password"] = ""
+	config["remote_type"] = "esx5"
+	config["remote_host"] = "foobar.example.com"
+	config["remote_password"] = "supersecret"
 	config["remote_private_key_file"] = ""
 	b = Builder{}
 	warns, err = b.Prepare(config)
@@ -230,6 +230,9 @@ func TestBuilderPrepare_RemoteExport(t *testing.T) {
 func TestBuilderPrepare_Format(t *testing.T) {
 	var b Builder
 	config := testConfig()
+	config["remote_type"] = "esx5"
+	config["remote_host"] = "foobar.example.com"
+	config["remote_password"] = "supersecret"
 
 	// Bad
 	config["format"] = "foobar"

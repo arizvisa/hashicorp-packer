@@ -39,11 +39,11 @@ func TestStepPrepareTools(t *testing.T) {
 		t.Fatal("should NOT have error")
 	}
 
-	// Test the driver
+	// Test the driver (esx5 driver doesn't implement an Iso path for tools)
 	if driver.ToolsIsoPathCalled {
 		t.Fatal("tools iso path should NOT be called")
 	}
-	if driver.ToolsIsoPathFlavor != "foo" {
+	if driver.ToolsIsoPathFlavor != "" {
 		t.Fatalf("bad: %#v", driver.ToolsIsoPathFlavor)
 	}
 }
@@ -67,33 +67,5 @@ func TestStepPrepareTools_esx5(t *testing.T) {
 	// Test the driver
 	if driver.ToolsIsoPathCalled {
 		t.Fatal("tools iso path should NOT be called")
-	}
-}
-
-func TestStepPrepareTools_nonExist(t *testing.T) {
-	state := testState(t)
-	step := &StepPrepareTools{
-		ToolsUploadFlavor: "foo",
-	}
-
-	driver := state.Get("driver").(*DriverMock)
-
-	// Mock results
-	driver.ToolsIsoPathResult = "foo"
-
-	// Test the run
-	if action := step.Run(context.Background(), state); action != multistep.ActionContinue {
-		t.Fatalf("bad action: %#v", action)
-	}
-	if _, ok := state.GetOk("error"); !ok {
-		t.Fatal("should have error")
-	}
-
-	// Test the driver
-	if driver.ToolsIsoPathCalled {
-		t.Fatal("tools iso path should NOT be called")
-	}
-	if driver.ToolsIsoPathFlavor != "foo" {
-		t.Fatalf("bad: %#v", driver.ToolsIsoPathFlavor)
 	}
 }
