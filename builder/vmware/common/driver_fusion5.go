@@ -200,3 +200,11 @@ const fusionSuppressPlist = `<?xml version="1.0" encoding="UTF-8"?>
 func (d *Fusion5Driver) GetVmwareDriver() VmwareDriver {
 	return d.VmwareDriver
 }
+
+func (d *Fusion5Driver) GetOVFTool() string {
+	ovftool := "ovftool"
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
+}

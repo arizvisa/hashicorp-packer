@@ -45,3 +45,7 @@ func (d *Workstation10Driver) Verify() error {
 func (d *Workstation10Driver) GetVmwareDriver() VmwareDriver {
 	return d.Workstation9Driver.VmwareDriver
 }
+
+func (d *Workstation10Driver) GetOVFTool() string {
+	return d.Workstation9Driver.GetOVFTool()
+}

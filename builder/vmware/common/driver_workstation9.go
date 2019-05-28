@@ -180,3 +180,11 @@ func (d *Workstation9Driver) ToolsInstall() error {
 func (d *Workstation9Driver) GetVmwareDriver() VmwareDriver {
 	return d.VmwareDriver
 }
+
+func (d *Workstation9Driver) GetOVFTool() string {
+	ovftool := "ovftool"
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
+}

@@ -199,3 +199,11 @@ func playerDataFilePaths() []string {
 
 	return paths
 }
+
+func (d *Player5Driver) GetOVFTool() string {
+	ovftool := "ovftool.exe"
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
+}

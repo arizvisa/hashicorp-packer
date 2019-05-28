@@ -117,3 +117,7 @@ func (d *Fusion6Driver) Verify() error {
 func (d *Fusion6Driver) GetVmwareDriver() VmwareDriver {
 	return d.Fusion5Driver.VmwareDriver
 }
+
+func (d *Fusion6Driver) GetOVFTool() string {
+	return d.Fusion5Driver.GetOVFTool()
+}

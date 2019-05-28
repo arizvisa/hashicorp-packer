@@ -11,8 +11,10 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -774,4 +776,16 @@ func (r *esxcliReader) find(key, val string) (map[string]string, error) {
 			return record, nil
 		}
 	}
+}
+
+func (d *ESX5Driver) GetOVFTool() string {
+	ovftool := "ovftool"
+	if runtime.GOOS == "windows" {
+		ovftool = "ovftool.exe"
+	}
+
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
 }

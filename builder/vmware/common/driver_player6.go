@@ -46,3 +46,7 @@ func (d *Player6Driver) Verify() error {
 func (d *Player6Driver) GetVmwareDriver() VmwareDriver {
 	return d.Player5Driver.VmwareDriver
 }
+
+func (d *Player6Driver) GetOVFTool() string {
+	return d.Player5Driver.GetOVFTool()
+}

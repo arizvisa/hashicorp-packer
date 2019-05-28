@@ -66,6 +66,9 @@ type Driver interface {
 	/// reimplement these, though, if it wants.
 	GetVmwareDriver() VmwareDriver
 
+	// Locate the OVFTool binary
+	GetOVFTool() string
+
 	// Get the guest hw address for the vm
 	GuestAddress(multistep.StateBag) (string, error)
 

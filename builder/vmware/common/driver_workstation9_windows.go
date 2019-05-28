@@ -224,3 +224,11 @@ func workstationDataFilePaths() []string {
 
 	return paths
 }
+
+func (d *Workstation9Driver) GetOVFTool() string {
+	ovftool := "ovftool.exe"
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
+}

@@ -270,3 +270,7 @@ func (d *DriverMock) GetVmwareDriver() VmwareDriver {
 	}
 	return state
 }
+
+func (d *DriverMock) GetOVFTool() string {
+	return ""
+}

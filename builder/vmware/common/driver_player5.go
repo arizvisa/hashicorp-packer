@@ -219,3 +219,11 @@ func (d *Player5Driver) ToolsInstall() error {
 func (d *Player5Driver) GetVmwareDriver() VmwareDriver {
 	return d.VmwareDriver
 }
+
+func (d *Player5Driver) GetOVFTool() string {
+	ovftool := "ovftool"
+	if _, err := exec.LookPath(ovftool); err != nil {
+		return ""
+	}
+	return ovftool
+}
