@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/hashicorp/packer/helper/multistep"
